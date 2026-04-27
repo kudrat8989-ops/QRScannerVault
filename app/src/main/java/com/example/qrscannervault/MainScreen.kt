@@ -11,6 +11,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
@@ -25,6 +26,10 @@ fun MainScreen(viewModel: ScannerViewModel) {
     var showSaveDialog by remember { mutableStateOf(false) }
     var lastScannedContent by remember { mutableStateOf("") }
     var scanName by remember { mutableStateOf("") }
+
+    // State for adding new categories
+    var showCategoryDialog by remember { mutableStateOf(false) }
+    var newCategoryName by remember { mutableStateOf("") }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -41,6 +46,7 @@ fun MainScreen(viewModel: ScannerViewModel) {
         }
     }
 
+    // Dialog for saving scan
     if (showSaveDialog) {
         AlertDialog(
             onDismissRequest = { showSaveDialog = false },
@@ -61,6 +67,36 @@ fun MainScreen(viewModel: ScannerViewModel) {
                         isCameraVisible = false
                     }
                 }) { Text("Save") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSaveDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    // Dialog for adding new category
+    if (showCategoryDialog) {
+        AlertDialog(
+            onDismissRequest = { showCategoryDialog = false },
+            title = { Text("Add New Category") },
+            text = {
+                TextField(
+                    value = newCategoryName,
+                    onValueChange = { newCategoryName = it },
+                    label = { Text("Category Name") }
+                )
+            },
+            confirmButton = {
+                Button(onClick = {
+                    if (newCategoryName.isNotBlank()) {
+                        viewModel.addCategory(newCategoryName)
+                        showCategoryDialog = false
+                        newCategoryName = ""
+                    }
+                }) { Text("Add") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCategoryDialog = false }) { Text("Cancel") }
             }
         )
     }
@@ -95,18 +131,28 @@ fun MainScreen(viewModel: ScannerViewModel) {
                 }
             } else {
                 if (categories.isNotEmpty()) {
-                    ScrollableTabRow(
-                        selectedTabIndex = categories.indexOfFirst { it.id == selectedCatId }.coerceAtLeast(0)
-                    ) {
-                        categories.forEach { category ->
-                            Tab(
-                                selected = selectedCatId == category.id,
-                                onClick = { viewModel.selectCategory(category.id) },
-                                text = { Text(category.name) }
-                            )
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        ScrollableTabRow(
+                            modifier = Modifier.weight(1f),
+                            selectedTabIndex = categories.indexOfFirst { it.id == selectedCatId }.coerceAtLeast(0)
+                        ) {
+                            categories.forEach { category ->
+                                Tab(
+                                    selected = selectedCatId == category.id,
+                                    onClick = { viewModel.selectCategory(category.id) },
+                                    text = { Text(category.name) }
+                                )
+                            }
+                        }
+                        IconButton(onClick = { showCategoryDialog = true }) {
+                            Icon(Icons.Default.Add, contentDescription = "Add Category")
                         }
                     }
+                } else {
+                    // Handle case where categories list is empty and initial setup failed (though LaunchedEffect should prevent this)
+                    Text("No categories found.")
                 }
+
                 selectedCatId?.let { catId ->
                     val scans by viewModel.getScansForCategory(catId).collectAsState(initial = emptyList())
                     ScanHistoryList(scans = scans, onDelete = { viewModel.deleteScan(it) })
