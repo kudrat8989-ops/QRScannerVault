@@ -28,7 +28,10 @@ class ScannerViewModel(private val scanDao: ScanDao) : ViewModel() {
 
     fun addCategory(name: String) {
         viewModelScope.launch {
-            scanDao.insertCategory(CategoryEntity(name = name))
+            val existing = categories.value.any { it.name.equals(name, ignoreCase = true) }
+            if (!existing) {
+                scanDao.insertCategory(CategoryEntity(name = name))
+            }
         }
     }
 
