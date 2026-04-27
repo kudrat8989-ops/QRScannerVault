@@ -15,12 +15,13 @@ import androidx.room.Index
             onDelete = ForeignKey.CASCADE
         )
     ],
-    indices = [Index(value = ["categoryId"])] // Добавляем индекс здесь
+    indices = [Index(value = ["categoryId"])]
 )
 data class ScanEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val content: String,
     val name: String,
+    val format: Int,
     val timestamp: Long,
     val categoryId: Long
 )
