@@ -1,5 +1,6 @@
 package com.example.qrscannervault
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -12,10 +13,15 @@ import androidx.compose.ui.unit.dp
 import com.example.qrscannervault.data.ScanEntity
 
 @Composable
-fun ScanHistoryList(scans: List<ScanEntity>, onDelete: (ScanEntity) -> Unit) {
+fun ScanHistoryList(scans: List<ScanEntity>, onDelete: (ScanEntity) -> Unit, onClick: (ScanEntity) -> Unit) {
     LazyColumn(modifier = Modifier.fillMaxSize()) {
         items(scans) { scan ->
-            Card(modifier = Modifier.fillMaxWidth().padding(8.dp)) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(8.dp)
+                    .clickable { onClick(scan) } // Make the card clickable
+            ) {
                 Row(
                     modifier = Modifier.padding(16.dp).fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
