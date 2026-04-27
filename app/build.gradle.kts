@@ -34,6 +34,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.androidx.compose.bom))
+    implementation("com.google.zxing:core:3.5.3")
 
     // Прямые ссылки вместо libs (исправляет ошибки Unresolved reference)
     implementation("androidx.compose.ui:ui")

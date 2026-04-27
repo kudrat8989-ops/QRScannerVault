@@ -12,6 +12,10 @@ interface ScanDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertCategory(category: CategoryEntity)
 
+    // Новый метод для коллбэка (без suspend)
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    fun insertCategorySync(category: CategoryEntity)
+
     @Update
     suspend fun updateCategory(category: CategoryEntity)
 

@@ -10,27 +10,40 @@ import kotlinx.coroutines.launch
 
 class ScannerViewModel(private val scanDao: ScanDao) : ViewModel() {
 
-    // All categories for tabs
     val categories: StateFlow<List<CategoryEntity>> = scanDao.getAllCategories()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // Currently selected category ID
     private val _selectedCategoryId = MutableStateFlow<Long?>(null)
     val selectedCategoryId: StateFlow<Long?> = _selectedCategoryId.asStateFlow()
+
+    // --- НОВОЕ: Состояние поиска ---
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
+    fun updateSearchQuery(query: String) {
+        _searchQuery.value = query
+    }
+    // ------------------------------
 
     fun selectCategory(id: Long) {
         _selectedCategoryId.value = id
     }
 
-    // Get scans for the active tab
-    fun getScansForCategory(categoryId: Long): Flow<List<ScanEntity>> = 
-        scanDao.getScansByCategory(categoryId)
+    // Изменяем логику получения сканов, чтобы учитывать поиск
+    fun getScansForCategory(categoryId: Long): Flow<List<ScanEntity>> {
+        return scanDao.getScansByCategory(categoryId).combine(searchQuery) { scans, query ->
+            if (query.isBlank()) scans
+            else scans.filter {
+                it.name.contains(query, ignoreCase = true) ||
+                        it.content.contains(query, ignoreCase = true)
+            }
+        }
+    }
 
     fun addCategory(name: String) {
         viewModelScope.launch {
-            // Check if a category with this name already exists in the current list of categories
-            val existing = categories.value.any { it.name.equals(name, ignoreCase = true) }
-            if (!existing && name.isNotBlank()) {
+            val currentCategories = categories.value
+            if (currentCategories.none { it.name.equals(name, ignoreCase = true) }) {
                 scanDao.insertCategory(CategoryEntity(name = name))
             }
         }
@@ -51,13 +64,18 @@ class ScannerViewModel(private val scanDao: ScanDao) : ViewModel() {
         }
     }
 
-    // Updated to include format parameter
+    fun moveScan(scan: ScanEntity, newCategoryId: Long) {
+        viewModelScope.launch {
+            scanDao.updateScan(scan.copy(categoryId = newCategoryId))
+        }
+    }
+
     fun saveScan(content: String, name: String, format: Int, categoryId: Long) {
         viewModelScope.launch {
             val scan = ScanEntity(
                 content = content,
                 name = name,
-                format = format, // Added format
+                format = format,
                 timestamp = System.currentTimeMillis(),
                 categoryId = categoryId
             )

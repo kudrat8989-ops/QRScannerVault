@@ -6,6 +6,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.ArrowForward // Эта иконка точно есть
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -13,14 +14,19 @@ import androidx.compose.ui.unit.dp
 import com.example.qrscannervault.data.ScanEntity
 
 @Composable
-fun ScanHistoryList(scans: List<ScanEntity>, onDelete: (ScanEntity) -> Unit, onClick: (ScanEntity) -> Unit) {
+fun ScanHistoryList(
+    scans: List<ScanEntity>,
+    onDelete: (ScanEntity) -> Unit,
+    onMove: (ScanEntity) -> Unit,
+    onClick: (ScanEntity) -> Unit
+) {
     LazyColumn(modifier = Modifier.fillMaxSize()) {
         items(scans) { scan ->
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(8.dp)
-                    .clickable { onClick(scan) } // Make the card clickable
+                    .clickable { onClick(scan) }
             ) {
                 Row(
                     modifier = Modifier.padding(16.dp).fillMaxWidth(),
@@ -30,8 +36,13 @@ fun ScanHistoryList(scans: List<ScanEntity>, onDelete: (ScanEntity) -> Unit, onC
                         Text(text = scan.name, style = MaterialTheme.typography.titleMedium)
                         Text(text = scan.content, style = MaterialTheme.typography.bodySmall)
                     }
-                    IconButton(onClick = { onDelete(scan) }) {
-                        Icon(Icons.Default.Delete, contentDescription = "Delete")
+                    Row {
+                        IconButton(onClick = { onMove(scan) }) {
+                            Icon(Icons.Default.ArrowForward, contentDescription = "Move")
+                        }
+                        IconButton(onClick = { onDelete(scan) }) {
+                            Icon(Icons.Default.Delete, contentDescription = "Delete")
+                        }
                     }
                 }
             }
