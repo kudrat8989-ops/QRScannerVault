@@ -7,13 +7,13 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 
 @Composable
@@ -21,15 +21,16 @@ fun MainScreen(viewModel: ScannerViewModel) {
     val context = LocalContext.current
     val categories by viewModel.categories.collectAsState()
     val selectedCatId by viewModel.selectedCategoryId.collectAsState()
-
+    
     var isCameraVisible by remember { mutableStateOf(false) }
     var showSaveDialog by remember { mutableStateOf(false) }
+    var showAddDialog by remember { mutableStateOf(false) }
+    var showRenameDialog by remember { mutableStateOf(false) }
+    
     var lastScannedContent by remember { mutableStateOf("") }
-    var scanName by remember { mutableStateOf("") }
+    var inputName by remember { mutableStateOf("") }
 
-    // State for adding new categories
-    var showCategoryDialog by remember { mutableStateOf(false) }
-    var newCategoryName by remember { mutableStateOf("") }
+    val currentCategory = categories.find { it.id == selectedCatId }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -46,57 +47,57 @@ fun MainScreen(viewModel: ScannerViewModel) {
         }
     }
 
-    // Dialog for saving scan
+    // Dialog for Saving QR
     if (showSaveDialog) {
         AlertDialog(
             onDismissRequest = { showSaveDialog = false },
             title = { Text("Save QR") },
-            text = {
-                TextField(
-                    value = scanName,
-                    onValueChange = { scanName = it },
-                    label = { Text("Name") }
-                )
-            },
+            text = { TextField(value = inputName, onValueChange = { inputName = it }, label = { Text("Name") }) },
             confirmButton = {
                 Button(onClick = {
-                    if (scanName.isNotBlank() && selectedCatId != null) {
-                        viewModel.saveScan(lastScannedContent, scanName, selectedCatId!!)
+                    if (inputName.isNotBlank() && selectedCatId != null) {
+                        viewModel.saveScan(lastScannedContent, inputName, selectedCatId!!)
                         showSaveDialog = false
-                        scanName = ""
+                        inputName = ""
                         isCameraVisible = false
                     }
                 }) { Text("Save") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showSaveDialog = false }) { Text("Cancel") }
             }
         )
     }
 
-    // Dialog for adding new category
-    if (showCategoryDialog) {
+    // Dialog for Adding Category
+    if (showAddDialog) {
         AlertDialog(
-            onDismissRequest = { showCategoryDialog = false },
-            title = { Text("Add New Category") },
-            text = {
-                TextField(
-                    value = newCategoryName,
-                    onValueChange = { newCategoryName = it },
-                    label = { Text("Category Name") }
-                )
-            },
+            onDismissRequest = { showAddDialog = false },
+            title = { Text("New Category") },
+            text = { TextField(value = inputName, onValueChange = { inputName = it }, label = { Text("Category Name") }) },
             confirmButton = {
                 Button(onClick = {
-                    if (newCategoryName.isNotBlank()) {
-                        viewModel.addCategory(newCategoryName)
-                        showCategoryDialog = false
-                        newCategoryName = ""
+                    if (inputName.isNotBlank()) {
+                        viewModel.addCategory(inputName)
+                        showAddDialog = false
+                        inputName = ""
                     }
                 }) { Text("Add") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showCategoryDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    // Dialog for Renaming Category
+    if (showRenameDialog && currentCategory != null) {
+        AlertDialog(
+            onDismissRequest = { showRenameDialog = false },
+            title = { Text("Rename Category") },
+            text = { TextField(value = inputName, onValueChange = { inputName = it }, label = { Text("New Name") }) },
+            confirmButton = {
+                Button(onClick = {
+                    if (inputName.isNotBlank()) {
+                        viewModel.renameCategory(currentCategory, inputName)
+                        showRenameDialog = false
+                        inputName = ""
+                    }
+                }) { Text("Rename") }
             }
         )
     }
@@ -108,11 +109,8 @@ fun MainScreen(viewModel: ScannerViewModel) {
                     isCameraVisible = false
                 } else {
                     val status = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA)
-                    if (status == PackageManager.PERMISSION_GRANTED) {
-                        isCameraVisible = true
-                    } else {
-                        permissionLauncher.launch(Manifest.permission.CAMERA)
-                    }
+                    if (status == PackageManager.PERMISSION_GRANTED) isCameraVisible = true
+                    else permissionLauncher.launch(Manifest.permission.CAMERA)
                 }
             }) {
                 Icon(if (isCameraVisible) Icons.Default.Close else Icons.Default.Add, contentDescription = null)
@@ -130,11 +128,12 @@ fun MainScreen(viewModel: ScannerViewModel) {
                     })
                 }
             } else {
-                if (categories.isNotEmpty()) {
-                    Row(modifier = Modifier.fillMaxWidth()) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    if (categories.isNotEmpty()) {
                         ScrollableTabRow(
                             modifier = Modifier.weight(1f),
-                            selectedTabIndex = categories.indexOfFirst { it.id == selectedCatId }.coerceAtLeast(0)
+                            selectedTabIndex = categories.indexOfFirst { it.id == selectedCatId }.coerceAtLeast(0),
+                            edgePadding = 8.dp
                         ) {
                             categories.forEach { category ->
                                 Tab(
@@ -144,13 +143,20 @@ fun MainScreen(viewModel: ScannerViewModel) {
                                 )
                             }
                         }
-                        IconButton(onClick = { showCategoryDialog = true }) {
-                            Icon(Icons.Default.Add, contentDescription = "Add Category")
+                    }
+                    
+                    // Category Management Buttons
+                    IconButton(onClick = { inputName = ""; showAddDialog = true }) {
+                        Icon(Icons.Default.Add, contentDescription = "Add Category")
+                    }
+                    if (currentCategory != null) {
+                        IconButton(onClick = { inputName = currentCategory.name; showRenameDialog = true }) {
+                            Icon(Icons.Default.Edit, contentDescription = "Rename")
+                        }
+                        IconButton(onClick = { viewModel.deleteCategory(currentCategory) }) {
+                            Icon(Icons.Default.Delete, contentDescription = "Delete")
                         }
                     }
-                } else {
-                    // Handle case where categories list is empty and initial setup failed (though LaunchedEffect should prevent this)
-                    Text("No categories found.")
                 }
 
                 selectedCatId?.let { catId ->
