@@ -14,7 +14,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete // Added import for Delete icon
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -70,10 +70,16 @@ fun MainScreen(viewModel: ScannerViewModel) {
     val categories by viewModel.categories.collectAsState()
     val selectedCatId by viewModel.selectedCategoryId.collectAsState()
 
+    // UI State Management for Scanning/Saving
     var isCameraVisible by remember { mutableStateOf(false) }
     var showSaveDialog by remember { mutableStateOf(false) }
     var lastScannedContent by remember { mutableStateOf("") }
     var scanName by remember { mutableStateOf("") }
+
+    // UI State Management for Category Creation
+    var showAddCategoryDialog by remember { mutableStateOf(false) }
+    var newCategoryName by remember { mutableStateOf("") }
+
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
@@ -128,6 +134,37 @@ fun MainScreen(viewModel: ScannerViewModel) {
         )
     }
 
+    // Dialog for adding a new category
+    if (showAddCategoryDialog) {
+        AlertDialog(
+            onDismissRequest = { showAddCategoryDialog = false },
+            title = { Text("New Category") },
+            text = {
+                Column {
+                    TextField(
+                        value = newCategoryName,
+                        onValueChange = { newCategoryName = it },
+                        label = { Text("Enter category name") }
+                    )
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    if (newCategoryName.isNotBlank()) {
+                        viewModel.addCategory(newCategoryName)
+                        showAddCategoryDialog = false
+                        newCategoryName = ""
+                    } else {
+                        Toast.makeText(context, "Please enter a category name.", Toast.LENGTH_SHORT).show()
+                    }
+                }) { Text("Create") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddCategoryDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
+
     Scaffold(
         floatingActionButton = {
             FloatingActionButton(onClick = {
@@ -164,15 +201,27 @@ fun MainScreen(viewModel: ScannerViewModel) {
             } else {
                 // Normal list view mode
                 if (categories.isNotEmpty()) {
-                    ScrollableTabRow(
-                        selectedTabIndex = categories.indexOfFirst { it.id == selectedCatId }.coerceAtLeast(0)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        categories.forEach { category ->
-                            Tab(
-                                selected = selectedCatId == category.id,
-                                onClick = { viewModel.selectCategory(category.id) },
-                                text = { Text(category.name) }
-                            )
+                        ScrollableTabRow(
+                            selectedTabIndex = categories.indexOfFirst { it.id == selectedCatId }.coerceAtLeast(0),
+                            modifier = Modifier.weight(1f) // Allow tabs to take available space
+                        ) {
+                            categories.forEach { category ->
+                                Tab(
+                                    selected = selectedCatId == category.id,
+                                    onClick = { viewModel.selectCategory(category.id) },
+                                    text = { Text(category.name) }
+                                )
+                            }
+                        }
+
+                        // Button to add new category
+                        IconButton(onClick = { showAddCategoryDialog = true }) {
+                            Icon(Icons.Default.Add, contentDescription = "Add Category")
                         }
                     }
                 }
