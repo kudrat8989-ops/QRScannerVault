@@ -14,13 +14,14 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete // Added import for Delete icon
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.room.Room
 import com.example.qrscannervault.data.AppDatabase
@@ -75,7 +76,7 @@ fun MainScreen(viewModel: ScannerViewModel) {
     var scanName by remember { mutableStateOf("") }
 
     val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
+        contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         if (isGranted) {
             isCameraVisible = true
@@ -99,11 +100,15 @@ fun MainScreen(viewModel: ScannerViewModel) {
             onDismissRequest = { showSaveDialog = false },
             title = { Text("Save QR") },
             text = {
-                TextField(
-                    value = scanName,
-                    onValueChange = { scanName = it },
-                    label = { Text("Enter name") }
-                )
+                Column {
+                    Text("Scanned Content: ${lastScannedContent}")
+                    Spacer(modifier = Modifier.height(16.dp))
+                    TextField(
+                        value = scanName,
+                        onValueChange = { scanName = it },
+                        label = { Text("Enter name") }
+                    )
+                }
             },
             confirmButton = {
                 Button(onClick = {
@@ -112,8 +117,13 @@ fun MainScreen(viewModel: ScannerViewModel) {
                         showSaveDialog = false
                         scanName = ""
                         isCameraVisible = false
+                    } else {
+                        Toast.makeText(context, "Please enter a name.", Toast.LENGTH_SHORT).show()
                     }
                 }) { Text("Save") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSaveDialog = false }) { Text("Cancel") }
             }
         )
     }
@@ -139,10 +149,12 @@ fun MainScreen(viewModel: ScannerViewModel) {
             }
         }
     ) { padding ->
-        Column(modifier = Modifier.padding(padding)) {
+        Column(modifier = Modifier.padding(padding).fillMaxSize()) {
             if (isCameraVisible) {
+                // Camera view mode
                 Box(modifier = Modifier.fillMaxSize()) {
                     CameraPreview(onBarcodeDetected = { content ->
+                        // Only trigger save dialog if not already showing one
                         if (!showSaveDialog) {
                             lastScannedContent = content
                             showSaveDialog = true
@@ -150,6 +162,7 @@ fun MainScreen(viewModel: ScannerViewModel) {
                     })
                 }
             } else {
+                // Normal list view mode
                 if (categories.isNotEmpty()) {
                     ScrollableTabRow(
                         selectedTabIndex = categories.indexOfFirst { it.id == selectedCatId }.coerceAtLeast(0)
@@ -163,9 +176,16 @@ fun MainScreen(viewModel: ScannerViewModel) {
                         }
                     }
                 }
+
+                // Display scan list for the selected category
                 selectedCatId?.let { catId ->
                     val scans by viewModel.getScansForCategory(catId).collectAsState(initial = emptyList())
-                    ScanList(scans)
+                    ScanList(scans, onDelete = viewModel::deleteScan) // Pass delete function
+                } ?: if (categories.isEmpty()) {
+                    Text("Categories not found.")
+                } else {
+                    // Fallback text if no category is selected but categories exist
+                    Text("Please select a category.")
                 }
             }
         }
@@ -173,13 +193,25 @@ fun MainScreen(viewModel: ScannerViewModel) {
 }
 
 @Composable
-fun ScanList(scans: List<ScanEntity>) {
+fun ScanList(scans: List<ScanEntity>, onDelete: (ScanEntity) -> Unit) { // Updated signature
     LazyColumn(modifier = Modifier.fillMaxSize()) {
-        items(scans) { scan ->
+        items(scans, key = { it.id }) { scan -> // Added key for better performance
             Card(modifier = Modifier.fillMaxWidth().padding(8.dp)) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(text = scan.name, style = MaterialTheme.typography.titleMedium)
-                    Text(text = scan.content, style = MaterialTheme.typography.bodySmall)
+                Row(
+                    modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically // Align items vertically
+                ) {
+                    // Scan details (Name and Content)
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(text = scan.name, style = MaterialTheme.typography.titleMedium)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(text = scan.content, style = MaterialTheme.typography.bodySmall)
+                    }
+                    // Delete button
+                    IconButton(onClick = { onDelete(scan) }) {
+                        Icon(Icons.Default.Delete, contentDescription = "Delete Scan")
+                    }
                 }
             }
         }
