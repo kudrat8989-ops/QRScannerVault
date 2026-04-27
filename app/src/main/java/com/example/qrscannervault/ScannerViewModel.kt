@@ -28,8 +28,9 @@ class ScannerViewModel(private val scanDao: ScanDao) : ViewModel() {
 
     fun addCategory(name: String) {
         viewModelScope.launch {
+            // Check if a category with this name already exists in the current list of categories
             val existing = categories.value.any { it.name.equals(name, ignoreCase = true) }
-            if (!existing) {
+            if (!existing && name.isNotBlank()) {
                 scanDao.insertCategory(CategoryEntity(name = name))
             }
         }
@@ -50,11 +51,13 @@ class ScannerViewModel(private val scanDao: ScanDao) : ViewModel() {
         }
     }
 
-    fun saveScan(content: String, name: String, categoryId: Long) {
+    // Updated to include format parameter
+    fun saveScan(content: String, name: String, format: Int, categoryId: Long) {
         viewModelScope.launch {
             val scan = ScanEntity(
                 content = content,
                 name = name,
+                format = format, // Added format
                 timestamp = System.currentTimeMillis(),
                 categoryId = categoryId
             )
