@@ -30,11 +30,19 @@ import com.example.qrscannervault.ui.theme.QRScannerVaultTheme
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Initialize Room database
         val db = Room.databaseBuilder(applicationContext, AppDatabase::class.java, "qr_vault_db").build()
         val dao = db.scanDao()
+
+        // Setup ViewModel
         val viewModel = ViewModelProvider(this, object : ViewModelProvider.Factory {
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                return ScannerViewModel(dao) as T
+                if (modelClass.isAssignableFrom(ScannerViewModel::class.java)) {
+                    @Suppress("UNCHECKED_CAST")
+                    return ScannerViewModel(dao) as T
+                }
+                throw IllegalArgumentException("Unknown ViewModel class")
             }
         })[ScannerViewModel::class.java]
 
@@ -51,35 +59,32 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun MainScreen(viewModel: ScannerViewModel) {
     val context = LocalContext.current
+    // Collect state from ViewModel
     val categories by viewModel.categories.collectAsState()
     val selectedCatId by viewModel.selectedCategoryId.collectAsState()
 
-    // State management for camera and permissions
-    var isScanning by remember { mutableStateOf(false) }
-    var hasCameraPermission by remember { mutableStateOf(false) }
+    // UI State Management
+    var isCameraVisible by remember { mutableStateOf(false) } // Controls if the camera view is active
     var showSaveDialog by remember { mutableStateOf(false) }
     var lastScannedContent by remember { mutableStateOf("") }
     var scanName by remember { mutableStateOf("") }
 
-    // Permission launcher setup
+    // Permission launcher setup for Camera access
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
-        hasCameraPermission = isGranted
         if (isGranted) {
-            // If permission granted, we can start scanning immediately if the user initiated it
-            if (isScanning) {
-                Toast.makeText(context, "Camera access granted.", Toast.LENGTH_SHORT).show()
-            }
+            // If granted, allow camera view to be shown/started
+            isCameraVisible = true
         } else {
-            Toast.makeText(context, "Camera permission is required to scan QR codes.", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, "Camera permission is required for scanning.", Toast.LENGTH_LONG).show()
         }
     }
 
-    // Logic for default category and selection (safer initialization)
+    // Initialization logic: Ensure a default category exists and select the first one on load
     LaunchedEffect(categories) {
         if (categories.isEmpty()) {
-            viewModel.addCategory("General")
+            viewModel.addCategory("General") // Add default category if none exist
         } else if (selectedCatId == null) {
             // Select the first available category upon initial load
             viewModel.selectCategory(categories[0].id)
@@ -90,33 +95,34 @@ fun MainScreen(viewModel: ScannerViewModel) {
     if (showSaveDialog) {
         AlertDialog(
             onDismissRequest = { showSaveDialog = false },
-            title = { Text("Сохранить QR") },
+            title = { Text("Save QR") },
             text = {
                 Column {
-                    Text("Сканировано: ${lastScannedContent}")
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("Scanned Content: ${lastScannedContent}")
+                    Spacer(modifier = Modifier.height(16.dp))
                     TextField(
                         value = scanName,
                         onValueChange = { scanName = it },
-                        label = { Text("Введите название") }
+                        label = { Text("Enter Name") }
                     )
                 }
             },
             confirmButton = {
                 Button(onClick = {
                     if (scanName.isNotBlank() && selectedCatId != null) {
+                        // Save the scan data
                         viewModel.saveScan(lastScannedContent, scanName, selectedCatId!!)
                         showSaveDialog = false
                         scanName = ""
-                        // Exit scanning mode after saving
-                        isScanning = false 
+                        // Exit scanning mode after successful save
+                        isCameraVisible = false
                     } else {
-                        Toast.makeText(context, "Пожалуйста, введите название.", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Please enter a name.", Toast.LENGTH_SHORT).show()
                     }
-                }) { Text("Сохранить") }
+                }) { Text("Save") }
             },
             dismissButton = {
-                TextButton(onClick = { showSaveDialog = false }) { Text("Отмена") }
+                TextButton(onClick = { showSaveDialog = false }) { Text("Cancel") }
             }
         )
     }
@@ -124,38 +130,36 @@ fun MainScreen(viewModel: ScannerViewModel) {
     Scaffold(
         floatingActionButton = {
             FloatingActionButton(onClick = {
-                if (isScanning) {
-                    // Exit scan mode
-                    isScanning = false
+                if (isCameraVisible) {
+                    // Exit scan mode if camera is visible
+                    isCameraVisible = false
                 } else {
                     // Attempt to start scanning
-                    if (hasCameraPermission) {
-                        isScanning = true // Start immediately if permission is already granted
+                    val status = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA)
+                    if (status == PackageManager.PERMISSION_GRANTED) {
+                        // Start immediately if permission is already granted
+                        isCameraVisible = true
                     } else {
-                        // Request permission if not granted
+                        // Request camera permission
                         permissionLauncher.launch(Manifest.permission.CAMERA)
                     }
                 }
             }) {
-                Icon(if (isScanning) Icons.Default.Close else Icons.Default.Add, contentDescription = "Переключить режим")
+                Icon(if (isCameraVisible) Icons.Default.Close else Icons.Default.Add, contentDescription = if (isCameraVisible) "Exit Scan" else "Start Scan")
             }
         }
     ) { padding ->
         Column(modifier = Modifier.padding(padding).fillMaxSize()) {
-            if (isScanning && hasCameraPermission) {
-                // Camera view is only shown if scanning is active AND permission is granted
+            if (isCameraVisible) {
+                // Camera view mode
                 Box(modifier = Modifier.fillMaxSize()) {
                     CameraPreview(onBarcodeDetected = { content ->
+                        // Only trigger save dialog if not already showing one
                         if (!showSaveDialog) {
                             lastScannedContent = content
                             showSaveDialog = true
                         }
                     })
-                }
-            } else if (isScanning && !hasCameraPermission) {
-                // Show a placeholder/message while waiting for permission or if it was denied
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("Требуется разрешение камеры для сканирования.")
                 }
             } else {
                 // Normal list view mode
@@ -173,14 +177,15 @@ fun MainScreen(viewModel: ScannerViewModel) {
                     }
                 }
 
+                // Display scan list for the selected category
                 selectedCatId?.let { catId ->
                     val scans by viewModel.getScansForCategory(catId).collectAsState(initial = emptyList())
                     ScanList(scans)
                 } ?: if (categories.isEmpty()) {
-                    Text("Категории не найдены.")
+                    Text("Categories not found.")
                 } else {
-                    // This state should ideally not be reached due to LaunchedEffect, but kept for safety
-                    Text("Выберите категорию.")
+                    // Fallback text if no category is selected but categories exist
+                    Text("Please select a category.")
                 }
             }
         }
