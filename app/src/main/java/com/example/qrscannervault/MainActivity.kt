@@ -16,11 +16,11 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.room.Room
 import com.example.qrscannervault.data.AppDatabase
@@ -31,11 +31,15 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Initialize Room database
-        val db = Room.databaseBuilder(applicationContext, AppDatabase::class.java, "qr_vault_db").build()
+        // Database initialization
+        val db = Room.databaseBuilder(
+            applicationContext,
+            AppDatabase::class.java,
+            "qr_vault_db"
+        ).build()
         val dao = db.scanDao()
 
-        // Setup ViewModel
+        // ViewModel setup with a factory to pass DAO
         val viewModel = ViewModelProvider(this, object : ViewModelProvider.Factory {
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
                 if (modelClass.isAssignableFrom(ScannerViewModel::class.java)) {
@@ -48,7 +52,10 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             QRScannerVaultTheme {
-                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
                     MainScreen(viewModel)
                 }
             }
@@ -59,70 +66,54 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun MainScreen(viewModel: ScannerViewModel) {
     val context = LocalContext.current
-    // Collect state from ViewModel
     val categories by viewModel.categories.collectAsState()
     val selectedCatId by viewModel.selectedCategoryId.collectAsState()
 
-    // UI State Management
-    var isCameraVisible by remember { mutableStateOf(false) } // Controls if the camera view is active
+    var isCameraVisible by remember { mutableStateOf(false) }
     var showSaveDialog by remember { mutableStateOf(false) }
     var lastScannedContent by remember { mutableStateOf("") }
     var scanName by remember { mutableStateOf("") }
 
-    // Permission launcher setup for Camera access
     val permissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
+        ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         if (isGranted) {
-            // If granted, allow camera view to be shown/started
             isCameraVisible = true
         } else {
-            Toast.makeText(context, "Camera permission is required for scanning.", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, "Camera permission is required to scan", Toast.LENGTH_SHORT).show()
         }
     }
 
-    // Initialization logic: Ensure a default category exists and select the first one on load
+    // Default category logic
     LaunchedEffect(categories) {
         if (categories.isEmpty()) {
-            viewModel.addCategory("General") // Add default category if none exist
+            viewModel.addCategory("General")
         } else if (selectedCatId == null) {
-            // Select the first available category upon initial load
             viewModel.selectCategory(categories[0].id)
         }
     }
 
-    // Dialog for saving scan data
+    // Dialog for naming the scanned QR
     if (showSaveDialog) {
         AlertDialog(
             onDismissRequest = { showSaveDialog = false },
             title = { Text("Save QR") },
             text = {
-                Column {
-                    Text("Scanned Content: ${lastScannedContent}")
-                    Spacer(modifier = Modifier.height(16.dp))
-                    TextField(
-                        value = scanName,
-                        onValueChange = { scanName = it },
-                        label = { Text("Enter Name") }
-                    )
-                }
+                TextField(
+                    value = scanName,
+                    onValueChange = { scanName = it },
+                    label = { Text("Enter name") }
+                )
             },
             confirmButton = {
                 Button(onClick = {
                     if (scanName.isNotBlank() && selectedCatId != null) {
-                        // Save the scan data
                         viewModel.saveScan(lastScannedContent, scanName, selectedCatId!!)
                         showSaveDialog = false
                         scanName = ""
-                        // Exit scanning mode after successful save
                         isCameraVisible = false
-                    } else {
-                        Toast.makeText(context, "Please enter a name.", Toast.LENGTH_SHORT).show()
                     }
                 }) { Text("Save") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showSaveDialog = false }) { Text("Cancel") }
             }
         )
     }
@@ -131,30 +122,27 @@ fun MainScreen(viewModel: ScannerViewModel) {
         floatingActionButton = {
             FloatingActionButton(onClick = {
                 if (isCameraVisible) {
-                    // Exit scan mode if camera is visible
                     isCameraVisible = false
                 } else {
-                    // Attempt to start scanning
                     val status = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA)
                     if (status == PackageManager.PERMISSION_GRANTED) {
-                        // Start immediately if permission is already granted
                         isCameraVisible = true
                     } else {
-                        // Request camera permission
                         permissionLauncher.launch(Manifest.permission.CAMERA)
                     }
                 }
             }) {
-                Icon(if (isCameraVisible) Icons.Default.Close else Icons.Default.Add, contentDescription = if (isCameraVisible) "Exit Scan" else "Start Scan")
+                Icon(
+                    if (isCameraVisible) Icons.Default.Close else Icons.Default.Add,
+                    contentDescription = null
+                )
             }
         }
     ) { padding ->
-        Column(modifier = Modifier.padding(padding).fillMaxSize()) {
+        Column(modifier = Modifier.padding(padding)) {
             if (isCameraVisible) {
-                // Camera view mode
                 Box(modifier = Modifier.fillMaxSize()) {
                     CameraPreview(onBarcodeDetected = { content ->
-                        // Only trigger save dialog if not already showing one
                         if (!showSaveDialog) {
                             lastScannedContent = content
                             showSaveDialog = true
@@ -162,7 +150,6 @@ fun MainScreen(viewModel: ScannerViewModel) {
                     })
                 }
             } else {
-                // Normal list view mode
                 if (categories.isNotEmpty()) {
                     ScrollableTabRow(
                         selectedTabIndex = categories.indexOfFirst { it.id == selectedCatId }.coerceAtLeast(0)
@@ -176,16 +163,9 @@ fun MainScreen(viewModel: ScannerViewModel) {
                         }
                     }
                 }
-
-                // Display scan list for the selected category
                 selectedCatId?.let { catId ->
                     val scans by viewModel.getScansForCategory(catId).collectAsState(initial = emptyList())
                     ScanList(scans)
-                } ?: if (categories.isEmpty()) {
-                    Text("Categories not found.")
-                } else {
-                    // Fallback text if no category is selected but categories exist
-                    Text("Please select a category.")
                 }
             }
         }
@@ -199,7 +179,6 @@ fun ScanList(scans: List<ScanEntity>) {
             Card(modifier = Modifier.fillMaxWidth().padding(8.dp)) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(text = scan.name, style = MaterialTheme.typography.titleMedium)
-                    Spacer(modifier = Modifier.height(4.dp))
                     Text(text = scan.content, style = MaterialTheme.typography.bodySmall)
                 }
             }
