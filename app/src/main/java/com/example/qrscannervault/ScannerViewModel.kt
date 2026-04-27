@@ -35,6 +35,21 @@ class ScannerViewModel(private val scanDao: ScanDao) : ViewModel() {
         }
     }
 
+    fun renameCategory(category: CategoryEntity, newName: String) {
+        viewModelScope.launch {
+            scanDao.updateCategory(category.copy(name = newName))
+        }
+    }
+
+    fun deleteCategory(category: CategoryEntity) {
+        viewModelScope.launch {
+            if (_selectedCategoryId.value == category.id) {
+                _selectedCategoryId.value = null
+            }
+            scanDao.deleteCategory(category)
+        }
+    }
+
     fun saveScan(content: String, name: String, categoryId: Long) {
         viewModelScope.launch {
             val scan = ScanEntity(
