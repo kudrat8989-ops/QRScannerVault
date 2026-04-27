@@ -12,6 +12,9 @@ interface ScanDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertCategory(category: CategoryEntity)
 
+    @Update
+    suspend fun updateCategory(category: CategoryEntity)
+
     @Delete
     suspend fun deleteCategory(category: CategoryEntity)
 
