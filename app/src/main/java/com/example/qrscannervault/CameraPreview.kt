@@ -17,7 +17,7 @@ import java.util.concurrent.Executors
 
 @Composable
 fun CameraPreview(
-    onBarcodeDetected: (String) -> Unit
+    onBarcodeDetected: (String, Int) -> Unit // Changed signature here
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -44,8 +44,13 @@ fun CameraPreview(
                         val image = InputImage.fromMediaImage(mediaImage, proxy.imageInfo.rotationDegrees)
                         BarcodeScanning.getClient().process(image)
                             .addOnSuccessListener { barcodes ->
-                                barcodes.firstOrNull()?.rawValue?.let { value ->
-                                    onBarcodeDetected(value)
+                                // Iterate through detected barcodes to get content and format
+                                for (barcode in barcodes) {
+                                    val rawValue = barcode.rawValue
+                                    val format = barcode.format
+                                    if (rawValue != null) {
+                                        onBarcodeDetected(rawValue, format)
+                                    }
                                 }
                             }
                             .addOnCompleteListener { proxy.close() }
