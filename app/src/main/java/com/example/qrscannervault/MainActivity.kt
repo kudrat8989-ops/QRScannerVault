@@ -10,6 +10,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
@@ -54,6 +55,7 @@ class MainActivity : ComponentActivity() {
 fun MainScreen(viewModel: ScannerViewModel) {
     val categories by viewModel.categories.collectAsState()
     val selectedCatId by viewModel.selectedCategoryId.collectAsState()
+    var isScanning by remember { mutableStateOf(false) }
 
     LaunchedEffect(categories) {
         if (selectedCatId == null && categories.isNotEmpty()) {
@@ -65,29 +67,47 @@ fun MainScreen(viewModel: ScannerViewModel) {
 
     Scaffold(
         floatingActionButton = {
-            FloatingActionButton(onClick = { /* TODO: Implement scan */ }) {
-                Icon(Icons.Default.Add, contentDescription = "Add")
+            FloatingActionButton(onClick = { isScanning = !isScanning }) {
+                Icon(Icons.Default.Add, contentDescription = if (isScanning) "Exit Scan Mode" else "Start Scan")
             }
         }
     ) { padding ->
-        Column(modifier = Modifier.padding(padding)) {
-            if (categories.isNotEmpty()) {
-                ScrollableTabRow(
-                    selectedTabIndex = categories.indexOfFirst { it.id == selectedCatId }.coerceAtLeast(0)
-                ) {
-                    categories.forEach { category ->
-                        Tab(
-                            selected = selectedCatId == category.id,
-                            onClick = { viewModel.selectCategory(category.id) },
-                            text = { Text(category.name) }
-                        )
+        if (isScanning) {
+            CameraPreview(
+                onBarcodeDetected = { barcodeValue ->
+                    // When a barcode is detected, save it.
+                    val categoryIdToUse = selectedCatId ?: categories.firstOrNull()?.id
+                    if (categoryIdToUse != null) {
+                        viewModel.saveScan(content = barcodeValue, name = "QR Scan", categoryId = categoryIdToUse)
+                        // Optionally stop scanning or show a confirmation here
                     }
                 }
-            }
+            )
+        } else {
+            Column(modifier = Modifier.padding(padding)) {
+                if (categories.isNotEmpty()) {
+                    ScrollableTabRow(
+                        selectedTabIndex = categories.indexOfFirst { it.id == selectedCatId }.coerceAtLeast(0)
+                    ) {
+                        categories.forEach { category ->
+                            Tab(
+                                selected = selectedCatId == category.id,
+                                onClick = { viewModel.selectCategory(category.id) },
+                                text = { Text(category.name) }
+                            )
+                        }
+                    }
+                }
 
-            selectedCatId?.let { catId ->
-                val scans by viewModel.getScansForCategory(catId).collectAsState(initial = emptyList())
-                ScanList(scans)
+                selectedCatId?.let { catId ->
+                    val scans by viewModel.getScansForCategory(catId).collectAsState(initial = emptyList())
+                    ScanList(scans)
+                } ?: if (categories.isEmpty()) {
+                    Text("No categories found.")
+                } else {
+                    // Display message if no category is selected yet, though LaunchedEffect should handle this
+                    Text("Select a category or wait for initial load.")
+                }
             }
         }
     }
