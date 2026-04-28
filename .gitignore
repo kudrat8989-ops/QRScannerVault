@@ -11,6 +11,7 @@ captures/
 *.iml
 local.properties
 .DS_Store
+*.hprof
 
 # Dependencies and caches
 /app/build/

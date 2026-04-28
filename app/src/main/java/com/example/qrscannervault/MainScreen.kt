@@ -1,6 +1,7 @@
 package com.example.qrscannervault
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Color
@@ -9,9 +10,18 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Collections
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -25,6 +35,10 @@ import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.common.InputImage
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.MultiFormatWriter
+import kotlinx.coroutines.flow.flowOf
+import androidx.core.content.FileProvider
+import java.io.File
+import java.io.FileOutputStream
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -34,12 +48,15 @@ fun MainScreen(viewModel: ScannerViewModel) {
     val selectedCatId by viewModel.selectedCategoryId.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
 
+    var isEditMode by remember { mutableStateOf(false) }
     var isCameraVisible by remember { mutableStateOf(false) }
+
     var showSaveDialog by remember { mutableStateOf(false) }
     var showAddDialog by remember { mutableStateOf(false) }
     var showRenameDialog by remember { mutableStateOf(false) }
     var showCodeDialog by remember { mutableStateOf(false) }
     var showMoveDialog by remember { mutableStateOf(false) }
+    var showDeleteConfirmDialog by remember { mutableStateOf(false) }
 
     var lastScannedContent by remember { mutableStateOf("") }
     var lastScannedFormat by remember { mutableStateOf(0) }
@@ -48,6 +65,7 @@ fun MainScreen(viewModel: ScannerViewModel) {
     var inputName by remember { mutableStateOf("") }
 
     val currentCategory = categories.find { it.id == selectedCatId }
+    val currentScans by (if (selectedCatId != null) viewModel.getScansForCategory(selectedCatId!!) else flowOf<List<ScanEntity>>(emptyList())).collectAsState(initial = emptyList())
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
@@ -67,9 +85,7 @@ fun MainScreen(viewModel: ScannerViewModel) {
                             Toast.makeText(context, "No code found in image", Toast.LENGTH_SHORT).show()
                         }
                     }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
+            } catch (e: Exception) { e.printStackTrace() }
         }
     }
 
@@ -80,27 +96,36 @@ fun MainScreen(viewModel: ScannerViewModel) {
         else Toast.makeText(context, "Permission denied", Toast.LENGTH_SHORT).show()
     }
 
-    // Handle auto-selection only. "General" is created by DB Callback.
     LaunchedEffect(categories) {
         if (categories.isNotEmpty() && selectedCatId == null) {
             viewModel.selectCategory(categories[0].id)
         }
     }
 
-    // View QR/Barcode Dialog
+    // --- ДИАЛОГ ПРОСМОТРА С КНОПКОЙ "ПОДЕЛИТЬСЯ КАРТИНКОЙ" ---
     if (showCodeDialog && selectedScanForCode != null) {
+        val bitmap = remember(selectedScanForCode) {
+            generateBarcode(selectedScanForCode!!.content, selectedScanForCode!!.format)
+        }
         AlertDialog(
             onDismissRequest = { showCodeDialog = false },
-            confirmButton = { TextButton(onClick = { showCodeDialog = false }) { Text("Close") } },
+            confirmButton = {
+                Row {
+                    TextButton(onClick = {
+                        bitmap?.let { shareBarcodeImage(context, it, selectedScanForCode!!.name) }
+                    }) {
+                        Icon(Icons.Default.Share, null)
+                        Spacer(Modifier.width(4.dp))
+                        Text("Share QR")
+                    }
+                    TextButton(onClick = { showCodeDialog = false }) { Text("Close") }
+                }
+            },
             title = { Text(selectedScanForCode!!.name) },
             text = {
-                val bitmap = remember(selectedScanForCode) {
-                    generateBarcode(selectedScanForCode!!.content, selectedScanForCode!!.format)
-                }
                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
                     bitmap?.let {
-                        // ИСПОЛЬЗУЕМ ПОЛНЫЙ ПУТЬ К IMAGE ДЛЯ ИСКЛЮЧЕНИЯ ОШИБОК
-                        androidx.compose.foundation.Image(
+                        Image(
                             bitmap = it.asImageBitmap(),
                             contentDescription = null,
                             modifier = Modifier.size(250.dp)
@@ -113,21 +138,34 @@ fun MainScreen(viewModel: ScannerViewModel) {
         )
     }
 
-    // Move Dialog
+    // [ОСТАЛЬНЫЕ ДИАЛОГИ БЕЗ ИЗМЕНЕНИЙ - Save, Add, Rename, Move, DeleteConfirm]
+    if (showDeleteConfirmDialog && currentCategory != null) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirmDialog = false },
+            title = { Text("Delete category?") },
+            text = { Text("This category contains ${currentScans.size} scans. Everything inside will be deleted.") },
+            confirmButton = {
+                Button(
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    onClick = {
+                        viewModel.deleteCategory(currentCategory)
+                        showDeleteConfirmDialog = false
+                    }
+                ) { Text("Delete Anyway") }
+            },
+            dismissButton = { TextButton(onClick = { showDeleteConfirmDialog = false }) { Text("Cancel") } }
+        )
+    }
+
     if (showMoveDialog && scanToMove != null) {
         AlertDialog(
             onDismissRequest = { showMoveDialog = false },
-            title = { Text("Move to category") },
+            title = { Text("Move to...") },
             text = {
                 Column {
                     categories.filter { it.id != scanToMove!!.categoryId }.forEach { category ->
-                        TextButton(
-                            onClick = {
-                                viewModel.moveScan(scanToMove!!, category.id)
-                                showMoveDialog = false
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) { Text(category.name) }
+                        TextButton(onClick = { viewModel.moveScan(scanToMove!!, category.id); showMoveDialog = false })
+                        { Text(category.name) }
                     }
                 }
             },
@@ -135,7 +173,6 @@ fun MainScreen(viewModel: ScannerViewModel) {
         )
     }
 
-    // Save Dialog
     if (showSaveDialog) {
         AlertDialog(
             onDismissRequest = { showSaveDialog = false },
@@ -152,7 +189,6 @@ fun MainScreen(viewModel: ScannerViewModel) {
         )
     }
 
-    // Add Category Dialog
     if (showAddDialog) {
         AlertDialog(
             onDismissRequest = { showAddDialog = false },
@@ -169,7 +205,6 @@ fun MainScreen(viewModel: ScannerViewModel) {
         )
     }
 
-    // Rename Dialog
     if (showRenameDialog && currentCategory != null) {
         AlertDialog(
             onDismissRequest = { showRenameDialog = false },
@@ -188,20 +223,21 @@ fun MainScreen(viewModel: ScannerViewModel) {
 
     Scaffold(
         floatingActionButton = {
-            Column(horizontalAlignment = Alignment.End) {
-                SmallFloatingActionButton(
-                    onClick = { photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
-                    modifier = Modifier.padding(bottom = 8.dp)
-                ) { Icon(Icons.Default.Search, "Gallery") }
+            if (!isCameraVisible) {
+                Column(horizontalAlignment = Alignment.End) {
+                    SmallFloatingActionButton(
+                        onClick = { photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    ) { Icon(Icons.Default.Collections, "Gallery") }
 
-                FloatingActionButton(onClick = {
-                    if (isCameraVisible) isCameraVisible = false
-                    else {
+                    FloatingActionButton(onClick = {
                         val status = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA)
                         if (status == PackageManager.PERMISSION_GRANTED) isCameraVisible = true
                         else permissionLauncher.launch(Manifest.permission.CAMERA)
-                    }
-                }) { Icon(if (isCameraVisible) Icons.Default.Close else Icons.Default.Add, "Camera") }
+                    }) { Icon(if (isCameraVisible) Icons.Default.Close else Icons.Default.Add, "Camera") }
+                }
+            } else {
+                FloatingActionButton(onClick = { isCameraVisible = false }) { Icon(Icons.Default.Close, null) }
             }
         }
     ) { padding ->
@@ -218,7 +254,6 @@ fun MainScreen(viewModel: ScannerViewModel) {
                     })
                 }
             } else {
-                // Search Bar
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { viewModel.updateSearchQuery(it) },
@@ -229,7 +264,7 @@ fun MainScreen(viewModel: ScannerViewModel) {
                     shape = MaterialTheme.shapes.medium
                 )
 
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                     if (categories.isNotEmpty()) {
                         ScrollableTabRow(
                             modifier = Modifier.weight(1f),
@@ -245,24 +280,85 @@ fun MainScreen(viewModel: ScannerViewModel) {
                             }
                         }
                     }
-                    IconButton(onClick = { inputName = ""; showAddDialog = true }) { Icon(Icons.Default.Add, null) }
-                    if (currentCategory != null) {
-                        IconButton(onClick = { inputName = currentCategory.name; showRenameDialog = true }) { Icon(Icons.Default.Edit, null) }
-                        IconButton(onClick = { viewModel.deleteCategory(currentCategory) }) { Icon(Icons.Default.Delete, null) }
+
+                    IconButton(onClick = { isEditMode = !isEditMode }) {
+                        Icon(
+                            imageVector = if (isEditMode) Icons.Default.CheckCircle else Icons.Default.Settings,
+                            contentDescription = "Toggle Edit",
+                            tint = if (isEditMode) MaterialTheme.colorScheme.primary else LocalContentColor.current
+                        )
                     }
                 }
 
-                selectedCatId?.let { catId ->
-                    val scans by viewModel.getScansForCategory(catId).collectAsState(initial = emptyList())
+                if (isEditMode) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        TextButton(onClick = { inputName = ""; showAddDialog = true }) {
+                            Icon(Icons.Default.Add, null)
+                            Text("New Tab")
+                        }
+                        if (currentCategory != null) {
+                            TextButton(onClick = { inputName = currentCategory.name; showRenameDialog = true }) {
+                                Icon(Icons.Default.Edit, null)
+                                Text("Rename")
+                            }
+                            TextButton(
+                                onClick = {
+                                    if (currentScans.isEmpty()) {
+                                        viewModel.deleteCategory(currentCategory)
+                                    } else {
+                                        showDeleteConfirmDialog = true
+                                    }
+                                },
+                                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                            ) {
+                                Icon(Icons.Default.Delete, null)
+                                Text("Delete Tab")
+                            }
+                        }
+                    }
+                }
+
+                selectedCatId?.let {
                     ScanHistoryList(
-                        scans = scans,
+                        scans = currentScans,
+                        isEditMode = isEditMode,
                         onDelete = { viewModel.deleteScan(it) },
                         onMove = { scanToMove = it; showMoveDialog = true },
-                        onClick = { selectedScanForCode = it; showCodeDialog = true }
+                        onClick = { if (!isEditMode) { selectedScanForCode = it; showCodeDialog = true } }
                     )
                 }
             }
         }
+    }
+}
+
+// --- ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ ОТПРАВКИ КАРТИНКИ ---
+fun shareBarcodeImage(context: android.content.Context, bitmap: Bitmap, name: String) {
+    try {
+        val cachePath = File(context.cacheDir, "images")
+        cachePath.mkdirs()
+        val stream = FileOutputStream("$cachePath/image.png")
+        bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
+        stream.close()
+
+        val imagePath = File(context.cacheDir, "images/image.png")
+        val contentUri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", imagePath)
+
+        if (contentUri != null) {
+            val shareIntent = Intent().apply {
+                action = Intent.ACTION_SEND
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                setDataAndType(contentUri, context.contentResolver.getType(contentUri))
+                putExtra(Intent.EXTRA_STREAM, contentUri)
+                type = "image/png"
+            }
+            context.startActivity(Intent.createChooser(shareIntent, "Share QR Code"))
+        }
+    } catch (e: Exception) {
+        e.printStackTrace()
     }
 }
 

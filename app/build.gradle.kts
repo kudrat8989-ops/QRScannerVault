@@ -30,6 +30,8 @@ android {
 }
 
 dependencies {
+    implementation("androidx.compose.material:material-icons-extended")
+    implementation("androidx.compose.foundation:foundation")
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
