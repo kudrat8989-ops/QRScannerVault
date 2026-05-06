@@ -1,10 +1,13 @@
 package com.example.qrscannervault.data
 
+import android.os.Parcelable
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 import androidx.room.ForeignKey
 import androidx.room.Index
+import kotlinx.parcelize.Parcelize
 
+@Parcelize
 @Entity(
     tableName = "scans",
     foreignKeys = [
@@ -24,4 +27,4 @@ data class ScanEntity(
     val format: Int,
     val timestamp: Long,
     val categoryId: Long
-)
+) : Parcelable

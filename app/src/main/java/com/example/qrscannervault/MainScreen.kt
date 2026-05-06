@@ -13,17 +13,10 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Collections
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable // НУЖНЫЙ ИМПОРТ
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
@@ -48,21 +41,24 @@ fun MainScreen(viewModel: ScannerViewModel) {
     val selectedCatId by viewModel.selectedCategoryId.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
 
-    var isEditMode by remember { mutableStateOf(false) }
-    var isCameraVisible by remember { mutableStateOf(false) }
+    // Используем rememberSaveable для сохранения состояний при повороте экрана
+    var isEditMode by rememberSaveable { mutableStateOf(false) }
+    var isCameraVisible by rememberSaveable { mutableStateOf(false) }
+    var showSaveDialog by rememberSaveable { mutableStateOf(false) }
+    var showAddDialog by rememberSaveable { mutableStateOf(false) }
+    var showRenameDialog by rememberSaveable { mutableStateOf(false) }
+    var showCodeDialog by rememberSaveable { mutableStateOf(false) }
+    var showMoveDialog by rememberSaveable { mutableStateOf(false) }
+    var showDeleteConfirmDialog by rememberSaveable { mutableStateOf(false) }
 
-    var showSaveDialog by remember { mutableStateOf(false) }
-    var showAddDialog by remember { mutableStateOf(false) }
-    var showRenameDialog by remember { mutableStateOf(false) }
-    var showCodeDialog by remember { mutableStateOf(false) }
-    var showMoveDialog by remember { mutableStateOf(false) }
-    var showDeleteConfirmDialog by remember { mutableStateOf(false) }
+    // Новое состояние для подтверждения удаления конкретной записи
+    var scanToDelete by rememberSaveable { mutableStateOf<ScanEntity?>(null) }
 
-    var lastScannedContent by remember { mutableStateOf("") }
-    var lastScannedFormat by remember { mutableStateOf(0) }
-    var selectedScanForCode by remember { mutableStateOf<ScanEntity?>(null) }
-    var scanToMove by remember { mutableStateOf<ScanEntity?>(null) }
-    var inputName by remember { mutableStateOf("") }
+    var lastScannedContent by rememberSaveable { mutableStateOf("") }
+    var lastScannedFormat by rememberSaveable { mutableStateOf(0) }
+    var selectedScanForCode by rememberSaveable { mutableStateOf<ScanEntity?>(null) }
+    var scanToMove by rememberSaveable { mutableStateOf<ScanEntity?>(null) }
+    var inputName by rememberSaveable { mutableStateOf("") }
 
     val currentCategory = categories.find { it.id == selectedCatId }
     val currentScans by (if (selectedCatId != null) viewModel.getScansForCategory(selectedCatId!!) else flowOf<List<ScanEntity>>(emptyList())).collectAsState(initial = emptyList())
@@ -102,7 +98,45 @@ fun MainScreen(viewModel: ScannerViewModel) {
         }
     }
 
-    // --- ДИАЛОГ ПРОСМОТРА С КНОПКОЙ "ПОДЕЛИТЬСЯ КАРТИНКОЙ" ---
+    // --- НОВЫЙ ДИАЛОГ: Подтверждение удаления ЗАПИСИ ---
+    if (scanToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { scanToDelete = null },
+            title = { Text("Delete scan?") },
+            text = { Text("Are you sure you want to delete '${scanToDelete!!.name}'?") },
+            confirmButton = {
+                Button(
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    onClick = {
+                        viewModel.deleteScan(scanToDelete!!)
+                        scanToDelete = null
+                    }
+                ) { Text("Delete") }
+            },
+            dismissButton = { TextButton(onClick = { scanToDelete = null }) { Text("Cancel") } }
+        )
+    }
+
+    // --- ДИАЛОГ: Подтверждение удаления ТАБА ---
+    if (showDeleteConfirmDialog && currentCategory != null) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirmDialog = false },
+            title = { Text("Delete category?") },
+            text = { Text("This category contains ${currentScans.size} scans. Everything inside will be deleted.") },
+            confirmButton = {
+                Button(
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    onClick = {
+                        viewModel.deleteCategory(currentCategory)
+                        showDeleteConfirmDialog = false
+                    }
+                ) { Text("Delete Anyway") }
+            },
+            dismissButton = { TextButton(onClick = { showDeleteConfirmDialog = false }) { Text("Cancel") } }
+        )
+    }
+
+    // Остальные диалоги...
     if (showCodeDialog && selectedScanForCode != null) {
         val bitmap = remember(selectedScanForCode) {
             generateBarcode(selectedScanForCode!!.content, selectedScanForCode!!.format)
@@ -135,25 +169,6 @@ fun MainScreen(viewModel: ScannerViewModel) {
                     Text(selectedScanForCode!!.content)
                 }
             }
-        )
-    }
-
-    // [ОСТАЛЬНЫЕ ДИАЛОГИ БЕЗ ИЗМЕНЕНИЙ - Save, Add, Rename, Move, DeleteConfirm]
-    if (showDeleteConfirmDialog && currentCategory != null) {
-        AlertDialog(
-            onDismissRequest = { showDeleteConfirmDialog = false },
-            title = { Text("Delete category?") },
-            text = { Text("This category contains ${currentScans.size} scans. Everything inside will be deleted.") },
-            confirmButton = {
-                Button(
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                    onClick = {
-                        viewModel.deleteCategory(currentCategory)
-                        showDeleteConfirmDialog = false
-                    }
-                ) { Text("Delete Anyway") }
-            },
-            dismissButton = { TextButton(onClick = { showDeleteConfirmDialog = false }) { Text("Cancel") } }
         )
     }
 
@@ -325,7 +340,7 @@ fun MainScreen(viewModel: ScannerViewModel) {
                     ScanHistoryList(
                         scans = currentScans,
                         isEditMode = isEditMode,
-                        onDelete = { viewModel.deleteScan(it) },
+                        onDelete = { scanToDelete = it }, // Изменено: сначала подтверждение
                         onMove = { scanToMove = it; showMoveDialog = true },
                         onClick = { if (!isEditMode) { selectedScanForCode = it; showCodeDialog = true } }
                     )
@@ -335,7 +350,6 @@ fun MainScreen(viewModel: ScannerViewModel) {
     }
 }
 
-// --- ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ ОТПРАВКИ КАРТИНКИ ---
 fun shareBarcodeImage(context: android.content.Context, bitmap: Bitmap, name: String) {
     try {
         val cachePath = File(context.cacheDir, "images")
@@ -357,9 +371,7 @@ fun shareBarcodeImage(context: android.content.Context, bitmap: Bitmap, name: St
             }
             context.startActivity(Intent.createChooser(shareIntent, "Share QR Code"))
         }
-    } catch (e: Exception) {
-        e.printStackTrace()
-    }
+    } catch (e: Exception) { e.printStackTrace() }
 }
 
 fun generateBarcode(content: String, format: Int): Bitmap? {
